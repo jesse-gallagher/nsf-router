@@ -18,6 +18,7 @@ package org.openntf.nsfrouter;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
@@ -45,6 +46,7 @@ public class NSFRouterService extends HttpService {
 	private NotesSession session;
 	private final Map<String, Long> lastChecked = new HashMap<>();
 	private final Map<String, Map<Pattern, String>> nsfRoutes = new HashMap<>();
+	private final Map<String, Map<String, String>> cachedRoutes = new HashMap<>();
 
 	public NSFRouterService(LCDEnvironment env) {
 		super(env);
@@ -106,6 +108,7 @@ public class NSFRouterService extends HttpService {
 					} else {
 						this.nsfRoutes.put(nsfName, null);
 					}
+					this.cachedRoutes.remove(nsfName);
 				} finally {
 					database.recycle();
 				}
@@ -124,24 +127,16 @@ public class NSFRouterService extends HttpService {
 			t.printStackTrace();
 		}
 		
-		Map<Pattern, String> routes = this.nsfRoutes.get(nsfName);
-		if(routes != null && !routes.isEmpty()) {
-			// Check if any routes match
-			int queryIndex = pathInfo.indexOf('?');
-			String nsfPathInfo;
-			if(queryIndex > 0) {
-				nsfPathInfo = pathInfo.substring(nsfIndex+4, queryIndex);
-			} else {
-				nsfPathInfo = pathInfo.substring(nsfIndex+4);
-			}
-			
-			// TODO consider caching the entry that matches it so that we don't have to re-do the check in doService
-			return routes.keySet()
-				.stream()
-				.anyMatch(p -> p.matcher(nsfPathInfo).matches());
+		// Check if any routes match
+		int queryIndex = pathInfo.indexOf('?');
+		String nsfPathInfo;
+		if(queryIndex > 0) {
+			nsfPathInfo = pathInfo.substring(nsfIndex+4, queryIndex);
+		} else {
+			nsfPathInfo = pathInfo.substring(nsfIndex+4);
 		}
-		
-		return false;
+		String matchedUrl = getUrl(nsfName, nsfPathInfo);
+		return StringUtil.isNotEmpty(matchedUrl);
 	}
 
 	@Override
@@ -160,26 +155,21 @@ public class NSFRouterService extends HttpService {
 			// Check if any routes match
 			String nsfPathInfo = pathInfo.substring(nsfIndex+4);
 			
-			for(Map.Entry<Pattern, String> route : routes.entrySet()) {
-				Matcher matcher = route.getKey().matcher(nsfPathInfo);
-				if(matcher.matches()) {
-					// Build our new path
-					StringBuilder newPath = new StringBuilder();
-					newPath.append(pathInfo.substring(0, nsfIndex+4));
-					newPath.append(nsfPathInfo.replaceAll(route.getKey().pattern(), route.getValue()));
-					String query = servletRequest.getQueryString();
-					if(StringUtil.isNotEmpty(query)) {
-						if(newPath.indexOf("?") > -1) {
-							newPath.append("&");
-						} else {
-							newPath.append("?");
-						}
-						newPath.append(query);
+			String newPath = getUrl(nsfName, nsfPathInfo);
+			if(StringUtil.isNotEmpty(newPath)) {
+				StringBuilder target = new StringBuilder(newPath);
+				String query = servletRequest.getQueryString();
+				if(StringUtil.isNotEmpty(query)) {
+					if(newPath.indexOf("?") > -1) {
+						target.append("&");
+					} else {
+						target.append("?");
 					}
-					// TODO consider handing this off to NSFService directly when it's an XSP URL
-					servletResponse.sendRedirect(newPath.toString());
-					return true;
+					target.append(query);
 				}
+				// TODO consider handing this off to NSFService directly when it's an XSP URL
+				servletResponse.sendRedirect(target.toString());
+				return true;
 			}
 		}
 		
@@ -201,5 +191,37 @@ public class NSFRouterService extends HttpService {
 	public void getModules(List<ComponentModule> modules) {
 		// NOP
 	}
+	
+	private synchronized String getUrl(String nsfName, String nsfPathInfo) {
+		Map<String, String> nsfRoutes = this.cachedRoutes.computeIfAbsent(nsfName, key -> createCacheMap());
+		return nsfRoutes.computeIfAbsent(nsfPathInfo, key -> {
+			Map<Pattern, String> routes = this.nsfRoutes.get(nsfName);
+			if(routes != null && !routes.isEmpty()) {
+				for(Map.Entry<Pattern, String> route : routes.entrySet()) {
+					Matcher matcher = route.getKey().matcher(nsfPathInfo);
+					if(matcher.matches()) {
+						// Build our new path
+						StringBuilder newPath = new StringBuilder();
+						newPath.append("/");
+						newPath.append(nsfName);
+						newPath.append(nsfPathInfo.replaceAll(route.getKey().pattern(), route.getValue()));
+						return newPath.toString();
+					}
+				}
+			}
+			
+			return "";
+		});
+	}
 
+	public static Map<String, String> createCacheMap() {
+		return new LinkedHashMap<String, String>(100 / 7, 0.7f, true) {
+			private static final long serialVersionUID = 1L;
+
+			@Override
+			protected boolean removeEldestEntry(Map.Entry<String, String> eldest) {
+				return size() > 100;
+			}
+		};
+	}
 }
