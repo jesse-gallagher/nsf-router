@@ -109,6 +109,8 @@ public class NSFRouterService extends HttpService {
 				} finally {
 					database.recycle();
 				}
+				
+				lastChecked.put(nsfName, designMod);
 			}
 		} catch(NotesAPIException e) {
 			switch(e.getNativeErrorCode()) {
