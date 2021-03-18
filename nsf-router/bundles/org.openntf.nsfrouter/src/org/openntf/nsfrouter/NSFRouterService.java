@@ -156,13 +156,7 @@ public class NSFRouterService extends HttpService {
 		Map<Pattern, String> routes = this.nsfRoutes.get(nsfName);
 		if(routes != null && !routes.isEmpty()) {
 			// Check if any routes match
-			int queryIndex = pathInfo.indexOf('?');
-			String nsfPathInfo;
-			if(queryIndex > 0) {
-				nsfPathInfo = pathInfo.substring(nsfIndex+4, queryIndex);
-			} else {
-				nsfPathInfo = pathInfo.substring(nsfIndex+4);
-			}
+			String nsfPathInfo = pathInfo.substring(nsfIndex+4);
 			
 			for(Map.Entry<Pattern, String> route : routes.entrySet()) {
 				Matcher matcher = route.getKey().matcher(nsfPathInfo);
@@ -171,8 +165,14 @@ public class NSFRouterService extends HttpService {
 					StringBuilder newPath = new StringBuilder();
 					newPath.append(pathInfo.substring(0, nsfIndex+4));
 					newPath.append(nsfPathInfo.replaceAll(route.getKey().pattern(), route.getValue()));
-					if(queryIndex > 0) {
-						newPath.append(pathInfo.substring(queryIndex));
+					String query = servletRequest.getQueryString();
+					if(StringUtil.isNotEmpty(query)) {
+						if(newPath.indexOf("?") > -1) {
+							newPath.append("&");
+						} else {
+							newPath.append("?");
+						}
+						newPath.append(query);
 					}
 					// TODO consider handing this off to NSFService directly when it's an XSP URL
 					servletResponse.sendRedirect(newPath.toString());
