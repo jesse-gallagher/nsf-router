@@ -17,11 +17,12 @@ package org.openntf.nsfrouter;
 
 import java.io.IOException;
 import java.io.InputStream;
-import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Properties;
+import java.util.TreeMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -44,9 +45,11 @@ import com.ibm.designer.runtime.domino.bootstrap.util.StringUtil;
 public class NSFRouterService extends HttpService {
 	
 	private NotesSession session;
-	private final Map<String, Long> lastChecked = new HashMap<>();
-	private final Map<String, Map<Pattern, String>> nsfRoutes = new HashMap<>();
-	private final Map<String, Map<String, String>> cachedRoutes = new HashMap<>();
+	
+	// NSF names are _kind of_ case-insensitive even on case-sensitive filesystems
+	private final Map<String, Long> lastChecked = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
+	private final Map<String, Map<Pattern, String>> nsfRoutes = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
+	private final Map<String, Map<String, Optional<String>>> cachedRoutes = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
 
 	public NSFRouterService(LCDEnvironment env) {
 		super(env);
@@ -135,8 +138,8 @@ public class NSFRouterService extends HttpService {
 		} else {
 			nsfPathInfo = pathInfo.substring(nsfIndex+4);
 		}
-		String matchedUrl = getUrl(nsfName, nsfPathInfo);
-		return StringUtil.isNotEmpty(matchedUrl);
+		Optional<String> matchedUrl = getUrl(nsfName, nsfPathInfo);
+		return matchedUrl.isPresent();
 	}
 
 	@Override
@@ -155,12 +158,12 @@ public class NSFRouterService extends HttpService {
 			// Check if any routes match
 			String nsfPathInfo = pathInfo.substring(nsfIndex+4);
 			
-			String newPath = getUrl(nsfName, nsfPathInfo);
-			if(StringUtil.isNotEmpty(newPath)) {
-				StringBuilder target = new StringBuilder(newPath);
+			Optional<String> newPath = getUrl(nsfName, nsfPathInfo);
+			if(newPath.isPresent()) {
+				StringBuilder target = new StringBuilder(newPath.get());
 				String query = servletRequest.getQueryString();
 				if(StringUtil.isNotEmpty(query)) {
-					if(newPath.indexOf("?") > -1) {
+					if(newPath.get().indexOf('?') > -1) {
 						target.append("&");
 					} else {
 						target.append("?");
@@ -192,8 +195,8 @@ public class NSFRouterService extends HttpService {
 		// NOP
 	}
 	
-	private synchronized String getUrl(String nsfName, String nsfPathInfo) {
-		Map<String, String> nsfRoutes = this.cachedRoutes.computeIfAbsent(nsfName, key -> createCacheMap());
+	private synchronized Optional<String> getUrl(String nsfName, String nsfPathInfo) {
+		Map<String, Optional<String>> nsfRoutes = this.cachedRoutes.computeIfAbsent(nsfName, key -> createCacheMap());
 		return nsfRoutes.computeIfAbsent(nsfPathInfo, key -> {
 			Map<Pattern, String> routes = this.nsfRoutes.get(nsfName);
 			if(routes != null && !routes.isEmpty()) {
@@ -205,21 +208,21 @@ public class NSFRouterService extends HttpService {
 						newPath.append("/");
 						newPath.append(nsfName);
 						newPath.append(nsfPathInfo.replaceAll(route.getKey().pattern(), route.getValue()));
-						return newPath.toString();
+						return Optional.of(newPath.toString());
 					}
 				}
 			}
 			
-			return "";
+			return Optional.empty();
 		});
 	}
 
-	public static Map<String, String> createCacheMap() {
-		return new LinkedHashMap<String, String>(100 / 7, 0.7f, true) {
+	public static Map<String, Optional<String>> createCacheMap() {
+		return new LinkedHashMap<String, Optional<String>>(100 / 7, 0.7f, true) {
 			private static final long serialVersionUID = 1L;
 
 			@Override
-			protected boolean removeEldestEntry(Map.Entry<String, String> eldest) {
+			protected boolean removeEldestEntry(Map.Entry<String, Optional<String>> eldest) {
 				return size() > 100;
 			}
 		};
