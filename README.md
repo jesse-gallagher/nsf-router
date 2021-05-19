@@ -15,7 +15,7 @@ Note: this file can also be placed in `Code/Java` or other equivalent places in 
 
 ## Regex Matching
 
-Regular Expression matching and replacement is done with the standard Java `java.util.regex` capabilities. Additionally, they must match the entire checked path info portion, though the `^` and `$` terminators are optional. For example, the pattern `foo/(\w+)` will match `foo/bar`, but not `foo/bar/` or `/foo/bar/baz`.
+Regular Expression matching and replacement is done with the standard Java `java.util.regex` capabilities. Additionally, they must match the entire checked path info portion, though the `^` and `$` terminators are optional. For example, the pattern `foo/(\w+)` will match `foo/bar`, but not `foo/bar/` or `foo/bar/baz`.
 
 Bear in mind that regexes should be encoded and escaped according to the rules of Java Properties files. In practice, this primarily means that backslashes must be doubled. For example, the a replacement for the pattern `foo/(\w+)` should be represented like this in the properties file:
 
